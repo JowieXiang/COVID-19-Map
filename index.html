@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+
+<head>
+    <meta charset="utf-8">
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+        }
+
+        svg {
+            width: 100%;
+            height: 90%;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        const svg = d3.select("body").append("svg"),
+            projection = d3.geoMercator().rotate([0, 0, 0]),
+            path = d3.geoPath().projection(projection),
+            url = "http://enjalot.github.io/wwsd/data/world/world-110m.geojson",
+            covid_url = "https://api.covid19api.com/summary";
+
+        Promise.all([d3.json(url), d3.json(covid_url)]).then(function (data) {
+            const world = data[0],
+                covid = data[1];
+
+            world.features.filter(f => f.properties.name === 'USA')[0].properties.name = 'United States of America';
+
+            for (const i in world.features) {
+                const covid_data = covid.Countries.filter((d) => d.Country.toLowerCase() === world.features[i].properties.name.toLowerCase())[0];
+                world.features[i] = { ...world.features[i], ...covid_data };
+            }
+
+            const extent = d3.extent(world.features, d => d["TotalConfirmed"] ? d["TotalConfirmed"] : 0),
+                color = d3.scaleThreshold()
+                    .domain(d3.range(extent[0], extent[1], Math.floor(extent[1] / 10)))
+                    .range(d3.schemeSpectral[11]),
+                x = d3.scaleLinear()
+                    .domain(d3.extent(world.features, d => d["TotalConfirmed"] ? d["TotalConfirmed"] : 0))
+                    .rangeRound([600, 860]);
+
+            svg.append("g")
+                .attr("class", "countries")
+                .selectAll("path")
+                .data(world.features)
+                .enter()
+                .append("path")
+                .attr("fill", d => d["TotalConfirmed"] ? color(d["TotalConfirmed"]) : '#ececec')
+                .attr("d", d => path(d))
+                .attr("stroke-width", 0.5)
+                .attr("stroke", "white")
+                .attr("transform", "translate(10,100)");
+
+            const g = svg.append("g")
+                .attr("class", "key")
+                .attr("transform", "translate(0,40)");
+
+            g.selectAll("rect")
+                .data(color.range().map(function (d) {
+                    d = color.invertExtent(d);
+                    if (d[0] == null) d[0] = x.domain()[0];
+                    if (d[1] == null) d[1] = x.domain()[1];
+                    return d;
+                }))
+                .enter().append("rect")
+                .attr("height", 8)
+                .attr("x", function (d) { return x(d[0]); })
+                .attr("width", function (d) { return x(d[1]) - x(d[0]); })
+                .attr("fill", function (d) { return color(d[0]); });
+
+            g.append("text")
+                .attr("class", "caption")
+                .attr("x", x.range()[0])
+                .attr("y", -6)
+                .attr("fill", "#000")
+                .attr("text-anchor", "start")
+                .attr("font-weight", "bold")
+                .text("Total Confirmed");
+
+            g.call(d3.axisBottom(x)
+                .tickSize(13)
+                .tickFormat(function (x, i) { return Math.floor(x / 10000) })
+                .tickValues(color.domain()))
+                .select(".domain")
+                .remove();
+
+        });
+    </script>
+</body>
